@@ -33,3 +33,14 @@ DEFAULT_TIMEOUT_MINUTES = 10
 
 XP_PER_MESSAGE = 10
 DEFAULT_DAILY = DAILY_REWARD
+
+
+# --- Кланы ---
+CLAN_CREATE_PRICE = 10000
+# Категория, где создаются чаты кланов (0 = бот сам создаст категорию «Кланы»)
+CLAN_CATEGORY_ID = 0
+CLAN_CATEGORY_NAME = "🏰 Кланы"
+CLAN_NAME_MAX = 32
+
+# --- Авто-роль новым участникам (0 = выключено; удобнее задавать командой /autorole) ---
+AUTO_ROLE_ID = 0
