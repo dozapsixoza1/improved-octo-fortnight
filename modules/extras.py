@@ -612,3 +612,171 @@ async def register(bot):
     classes = (af.Core, ShopProfile, af.Moderation, af.Support, af.Staff, af.Events, af.Giveaways, ClansPlus, af.Games, ShopAdmin, af.Security, MOG, AutoRole, Roles, LevelFix, ShopDelete)
     for cls in classes:
         await bot.add_cog(cls(bot))
+
+
+
+# ───────────────────────────── Верификация: гендерные роли ─────────────────────────────
+
+async def _vf_role(bot, guild, key):
+    v = await bot.db.get_setting(key)
+    return guild.get_role(int(v)) if v else None
+
+
+async def _is_verifier(bot, i):
+    if bool(admin_ok(i)):
+        return True
+    role = await _vf_role(bot, i.guild, 'vf_verifier')
+    return bool(role and role in getattr(i.user, 'roles', []))
+
+
+class GenderView(discord.ui.View):
+    def __init__(self, cog, target):
+        super().__init__(timeout=900)
+        self.cog = cog
+        self.target = target
+        self.message = None
+
+    async def interaction_check(self, i: discord.Interaction):
+        if await _is_verifier(self.cog.bot, i):
+            return True
+        await i.response.send_message('⛔ Эти кнопки только для верификаторов.', ephemeral=True)
+        return False
+
+    @discord.ui.button(label='Девочка', emoji='👧', style=discord.ButtonStyle.primary)
+    async def girl(self, i: discord.Interaction, button: discord.ui.Button):
+        await self.cog.finish(i, self, 'girl')
+
+    @discord.ui.button(label='Мальчик', emoji='👦', style=discord.ButtonStyle.primary)
+    async def boy(self, i: discord.Interaction, button: discord.ui.Button):
+        await self.cog.finish(i, self, 'boy')
+
+    async def on_timeout(self):
+        for c in self.children:
+            c.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except Exception:
+                pass
+
+
+class Verification(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    async def finish(self, i, view, kind):
+        bot, guild = self.bot, i.guild
+        girl = await _vf_role(bot, guild, 'vf_girl')
+        boy = await _vf_role(bot, guild, 'vf_boy')
+        newcomer = await _vf_role(bot, guild, 'vf_newcomer')
+        if not girl or not boy:
+            return await i.response.send_message('Роли не настроены. Админ: `/vf_setup`.', ephemeral=True)
+        target = guild.get_member(view.target.id)
+        if not target:
+            return await i.response.send_message('Участник уже вышел с сервера.', ephemeral=True)
+        add, other = (girl, boy) if kind == 'girl' else (boy, girl)
+        me = guild.me
+        if not me.guild_permissions.manage_roles or add >= me.top_role or other >= me.top_role or (newcomer and newcomer >= me.top_role):
+            return await i.response.send_message('❌ Бот не может управлять этими ролями: нужно право «Управлять ролями», а роль бота должна стоять выше ролей девочки, мальчика и новичка.', ephemeral=True)
+        await i.response.defer()
+        try:
+            if other in target.roles:
+                await target.remove_roles(other, reason=f'Верификация ({i.user})')
+            if add not in target.roles:
+                await target.add_roles(add, reason=f'Верификация ({i.user})')
+            if newcomer and newcomer in target.roles:
+                await target.remove_roles(newcomer, reason=f'Верификация ({i.user})')
+        except discord.HTTPException as e:
+            return await i.followup.send(f'❌ Не удалось изменить роли: `{e}`', ephemeral=True)
+        await bot.db.execute('INSERT OR REPLACE INTO verification(guild_id,user_id,verified_at) VALUES(?,?,?)', (guild.id, target.id, ts(now())))
+        await bot.db.execute('INSERT INTO logs(guild_id,kind,actor_id,target_id,data,created_at) VALUES(?,?,?,?,?,?)', (guild.id, 'verification', i.user.id, target.id, kind, ts(now())))
+        e = emb('✅ Верификация пройдена', f'Участник: {target.mention}\nРоль: {add.mention}\nВерификатор: {i.user.mention}')
+        view.stop()
+        await i.edit_original_response(embed=e, view=None)
+        if config.LOG_CHANNEL_ID:
+            ch = guild.get_channel(config.LOG_CHANNEL_ID)
+            if ch:
+                try:
+                    await ch.send(embed=e)
+                except discord.HTTPException:
+                    pass
+
+    @app_commands.command(name='vf', description='Верификация: выдать роль девочки или мальчика')
+    @app_commands.describe(member='Кого верифицируем (если не указать, возьму единственного новичка из твоего голосового канала)')
+    async def vf(self, i: discord.Interaction, member: discord.Member = None):
+        if not await _is_verifier(self.bot, i):
+            return await i.response.send_message('⛔ Команда только для верификаторов.', ephemeral=True)
+        girl = await _vf_role(self.bot, i.guild, 'vf_girl')
+        boy = await _vf_role(self.bot, i.guild, 'vf_boy')
+        if not girl or not boy:
+            return await i.response.send_message('Роли не настроены. Админ: `/vf_setup`.', ephemeral=True)
+        if member is None:
+            vs = i.user.voice
+            if not vs or not vs.channel:
+                return await i.response.send_message('Укажи участника (`member`) или зайди в голосовой канал вместе с ним.', ephemeral=True)
+            vrole = await _vf_role(self.bot, i.guild, 'vf_verifier')
+            cands = [m for m in vs.channel.members if not m.bot and m.id != i.user.id and not (vrole and vrole in m.roles)]
+            if len(cands) != 1:
+                return await i.response.send_message(f'В твоём канале подходящих участников: {len(cands)}. Укажи нужного: `/vf member:@ник`.', ephemeral=True)
+            member = cands[0]
+        if member.bot:
+            return await i.response.send_message('Ботов верифицировать не нужно.', ephemeral=True)
+        view = GenderView(self, member)
+        e = emb('🪪 Верификация', f'Участник: {member.mention}\nВерификатор: {i.user.mention}\n\nВыбери пол кнопкой ниже 👇')
+        await i.response.send_message(embed=e, view=view)
+        view.message = await i.original_response()
+
+    @app_commands.command(name='vf_setup', description='Настроить верификацию (без параметров — показать текущие настройки)')
+    @app_commands.describe(verifier='Роль верификатора', girl='Роль «Девочка»', boy='Роль «Мальчик»', newcomer='Роль новичка: бот снимет её после верификации', reset_newcomer='Сбросить роль новичка')
+    @app_commands.check(admin_ok)
+    async def vf_setup(self, i: discord.Interaction, verifier: discord.Role = None, girl: discord.Role = None, boy: discord.Role = None, newcomer: discord.Role = None, reset_newcomer: bool = False):
+        me = i.guild.me
+        items = (('vf_verifier', verifier, False), ('vf_girl', girl, True), ('vf_boy', boy, True), ('vf_newcomer', newcomer, True))
+        for key, role, assign in items:
+            if role is None:
+                continue
+            if role.is_default():
+                return await i.response.send_message('Роль @everyone тут использовать нельзя.', ephemeral=True)
+            if assign and (role.managed or role >= me.top_role or not me.guild_permissions.manage_roles):
+                return await i.response.send_message(f'Бот не сможет управлять ролью {role.mention}: нужно право «Управлять ролями», а роль бота должна стоять выше неё.', ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+        for key, role, assign in items:
+            if role is not None:
+                await self.bot.db.set_setting(key, role.id)
+        if reset_newcomer:
+            await self.bot.db.set_setting('vf_newcomer', None)
+        lines = []
+        for key, label in (('vf_verifier', 'Верификатор'), ('vf_girl', 'Девочка'), ('vf_boy', 'Мальчик'), ('vf_newcomer', 'Новичок (снимается)')):
+            r = await _vf_role(self.bot, i.guild, key)
+            lines.append(f'**{label}:** {r.mention if r else "—"}')
+        await i.response.send_message(embed=emb('🪪 Настройки верификации', '\n'.join(lines)), ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
+
+
+# Эта версия заменяет прежнюю register (в Python побеждает определение, стоящее ниже)
+async def register(bot):
+    import modules.all_features as af
+    classes = (af.Core, ShopProfile, af.Moderation, af.Support, af.Staff, af.Events, af.Giveaways, ClansPlus, af.Games, ShopAdmin, af.Security, MOG, AutoRole, Roles, LevelFix, ShopDelete, Verification)
+    for cls in classes:
+        await bot.add_cog(cls(bot))
+
+
+
+# ───────────────────────────── Закрытая /verify ─────────────────────────────
+
+from modules.all_features import Support
+
+
+class SupportPlus(Support):
+    @app_commands.command(name='verify', description='Отметить участника верифицированным (только верификаторы)')
+    async def verify(self, i: discord.Interaction, member: discord.Member):
+        if not await _is_verifier(self.bot, i):
+            return await i.response.send_message('⛔ Команда только для верификаторов.', ephemeral=True)
+        await self.bot.db.execute('INSERT OR REPLACE INTO verification(guild_id,user_id,verified_at) VALUES(?,?,?)', (i.guild.id, member.id, ts(now())))
+        await i.response.send_message(f'✅ {member.mention} отмечен как верифицированный.', allowed_mentions=discord.AllowedMentions.none())
+
+
+# Эта версия заменяет прежнюю register (в Python побеждает определение, стоящее ниже)
+async def register(bot):
+    import modules.all_features as af
+    classes = (af.Core, ShopProfile, af.Moderation, SupportPlus, af.Staff, af.Events, af.Giveaways, ClansPlus, af.Games, ShopAdmin, af.Security, MOG, AutoRole, Roles, LevelFix, ShopDelete, Verification)
+    for cls in classes:
+        await bot.add_cog(cls(bot))
