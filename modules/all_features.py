@@ -406,6 +406,4 @@ class MOG(commands.Cog):
     async def mog(self,i,member:discord.Member=None):
         m=member or i.user; score=50+min(20,len(m.roles)*3)+(10 if m.avatar else 0)+(10 if m.display_name!=m.name else 0); score=min(100,score+random.randint(-8,8)); await i.response.send_message(embed=emb('🗿 MOG',f'{m.mention}\n\n**Оценка оформления: {score}/100**\n\nРазвлекательная функция — результат субъективный.'))
 
-async def setup(bot):
-        from modules.extras import ShopProfile, ShopAdmin, ClansPlus, MOG, AutoRole, Roles, LevelFix
-    for cls in (Core,ShopProfile,Moderation,Support,Staff,Events,Giveaways,ClansPlus,Games,ShopAdmin,Security,MOG,AutoRole,Roles,LevelFix): await bot.add_cog(cls(bot))
+async def setup(bot): from modules.extras import register; await register(bot)
