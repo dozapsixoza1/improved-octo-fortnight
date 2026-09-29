@@ -38,9 +38,30 @@ class Database:
         CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, kind TEXT, actor_id INTEGER, target_id INTEGER, data TEXT, created_at TEXT);
         CREATE TABLE IF NOT EXISTS verification (guild_id INTEGER, user_id INTEGER PRIMARY KEY, verified_at TEXT);
         CREATE TABLE IF NOT EXISTS rooms (guild_id INTEGER, user_id INTEGER PRIMARY KEY, channel_id INTEGER, expires_at TEXT);
+        CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id INTEGER, user_id INTEGER, product TEXT, amount INTEGER, currency TEXT, status TEXT, external_id TEXT, created_at TEXT);
         ''')
+        # Мягкие миграции: добавляют новые колонки в уже существующую базу
+        await self._add_column('shop', 'role_id', 'INTEGER DEFAULT 0')
+        await self._add_column('clans', 'text_channel_id', 'INTEGER DEFAULT 0')
+        await self._add_column('clans', 'voice_channel_id', 'INTEGER DEFAULT 0')
         await self.db.commit()
+
+    async def _add_column(self, table, column, decl):
+        cur = await self.db.execute(f'PRAGMA table_info({table})')
+        cols = [r['name'] for r in await cur.fetchall()]
+        if column not in cols:
+            await self.db.execute(f'ALTER TABLE {table} ADD COLUMN {column} {decl}')
+
+    async def get_setting(self, key, default=None):
+        r = await self.one('SELECT value FROM settings WHERE key=?', (key,))
+        return r['value'] if r else default
+
+    async def set_setting(self, key, value):
+        if value is None:
+            await self.execute('DELETE FROM settings WHERE key=?', (key,))
+        else:
+            await self.execute('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, str(value)))
 
     async def execute(self, sql, params=(), fetch=False, many=False):
         cur = await self.db.executemany(sql, params) if many else await self.db.execute(sql, params)
