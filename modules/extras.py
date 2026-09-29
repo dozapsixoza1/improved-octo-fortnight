@@ -234,6 +234,7 @@ class AutoRole(commands.Cog):
         return int(v) if v else int(config.AUTO_ROLE_ID or 0)
 
     @commands.Cog.listener()
+    
     async def on_member_join(self, m: discord.Member):
         if m.bot:
             return
@@ -579,5 +580,35 @@ class LevelFix(commands.Cog):
 async def register(bot):
     import modules.all_features as af
     classes = (af.Core, ShopProfile, af.Moderation, af.Support, af.Staff, af.Events, af.Giveaways, ClansPlus, af.Games, ShopAdmin, af.Security, MOG, AutoRole, Roles, LevelFix)
+    for cls in classes:
+        await bot.add_cog(cls(bot))
+
+
+# ───────────────────────────── Удаление товаров из магазина ─────────────────────────────
+
+class ShopDelete(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name='delshop', description='Удалить товар из магазина')
+    @app_commands.describe(item='Название товара')
+    @app_commands.check(admin_ok)
+    async def delshop(self, i: discord.Interaction, item: str):
+        r = await self.bot.db.one('SELECT item FROM shop WHERE lower(item)=lower(?)', (item,))
+        if not r:
+            return await i.response.send_message('Такого товара нет в магазине.', ephemeral=True)
+        await self.bot.db.execute('DELETE FROM shop WHERE item=?', (r['item'],))
+        await i.response.send_message(f'🗑 Товар **{r["item"]}** удалён из магазина. То, что игроки уже купили, у них остаётся.', ephemeral=True)
+
+    @delshop.autocomplete('item')
+    async def delshop_autocomplete(self, i: discord.Interaction, current: str):
+        rows = await self.bot.db.execute('SELECT item FROM shop ORDER BY price', fetch=True)
+        return [app_commands.Choice(name=x['item'][:100], value=x['item']) for x in rows if current.lower() in x['item'].lower()][:25]
+
+
+# Эта версия заменяет прежнюю register (в Python побеждает определение, стоящее ниже)
+async def register(bot):
+    import modules.all_features as af
+    classes = (af.Core, ShopProfile, af.Moderation, af.Support, af.Staff, af.Events, af.Giveaways, ClansPlus, af.Games, ShopAdmin, af.Security, MOG, AutoRole, Roles, LevelFix, ShopDelete)
     for cls in classes:
         await bot.add_cog(cls(bot))
