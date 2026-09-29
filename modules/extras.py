@@ -572,3 +572,12 @@ class LevelFix(commands.Cog):
         if m.author.bot or not m.guild:
             return
         await self.bot.db.execute('UPDATE users SET level=MAX(level,1+xp/500) WHERE user_id=?', (m.author.id,))
+
+
+# ───────────────────────────── Регистрация всех модулей ─────────────────────────────
+
+async def register(bot):
+    import modules.all_features as af
+    classes = (af.Core, ShopProfile, af.Moderation, af.Support, af.Staff, af.Events, af.Giveaways, ClansPlus, af.Games, ShopAdmin, af.Security, MOG, AutoRole, Roles, LevelFix)
+    for cls in classes:
+        await bot.add_cog(cls(bot))
