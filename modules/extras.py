@@ -16,28 +16,19 @@ FONT_DIR = Path(__file__).resolve().parent.parent / 'assets' / 'fonts'
 # ───────────────────────────── MOG: карточка-картинка ─────────────────────────────
 
 _FONT_CACHE = {}
-_FONT_URLS = {
-    'DejaVuSans.ttf': ['https://github.com/dejavu-fonts/dejavu-fonts/raw/version_2_37/ttf/DejaVuSans.ttf'],
-    'DejaVuSans-Bold.ttf': ['https://github.com/dejavu-fonts/dejavu-fonts/raw/version_2_37/ttf/DejaVuSans-Bold.ttf'],
-}
+_SYSTEM_DIRS = (
+    Path('/usr/share/fonts/truetype/dejavu'),
+    Path('/usr/share/fonts/dejavu'),
+    Path('/usr/share/fonts/TTF'),
+)
 
 
 def _font_path(name):
-    """Ищет шрифт в assets/fonts, в системе, а если нет — скачивает один раз."""
-    for p in (FONT_DIR / name, Path('/usr/share/fonts/truetype/dejavu') / name):
+    """Ищет шрифт в assets/fonts, затем в системе. Сеть не используется."""
+    for p in (FONT_DIR / name, *(d / name for d in _SYSTEM_DIRS)):
         if p.exists():
             return str(p)
-    try:
-        import urllib.request
-        FONT_DIR.mkdir(parents=True, exist_ok=True)
-        for url in _FONT_URLS.get(name, []):
-            try:
-                urllib.request.urlretrieve(url, str(FONT_DIR / name))
-                return str(FONT_DIR / name)
-            except Exception as e:
-                print(f'WARN: не скачался шрифт {url}: {e!r}', flush=True)
-    except Exception:
-        pass
+    print(f'WARN: шрифт {name} не найден. Положи его в assets/fonts/', flush=True)
     return None
 
 
