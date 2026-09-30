@@ -1494,17 +1494,22 @@ class EventOrders(commands.Cog):
             ),
         )
 
-        q = emb(
-            f'🧮 РАУНД '
-            f'#{new_round}/{MATH_ROUNDS}',
-            '⚡ **Первый правильный ответ '
-            'получает +1 балл!**\n\n'
-            '✍️ Пиши только число сообщением.\n'
-            '❌ Ошибочный ответ — без штрафа.\n'
-            '🏆 После правильного ответа бот '
-            'автоматически запустит следующий раунд.',
-            color=0xA855F7,
-        )
+        leaders_text = (
+    '\n'.join(score_lines)
+    if score_lines
+    else 'Пока никто не отвечал.'
+)
+
+e = emb(
+    '🧮 МАТЕМАТИКА',
+    'Решите **5 примеров** быстрее остальных.\n'
+    'Первый правильный ответ получает '
+    '**+1 балл**.\n\n'
+    f'**Статус:** {status}\n'
+    f'**Раунд:** {session["round"]}/{MATH_ROUNDS}\n\n'
+    f'🏆 **Лидеры:**\n{leaders_text}',
+    color=0x8B5CF6,
+)
 
         q.set_image(
             url=f'attachment://math_round_{new_round}.png'
