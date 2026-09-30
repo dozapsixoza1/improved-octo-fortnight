@@ -771,3 +771,12 @@ async def register(bot):
     classes = (af.Core, ShopProfile, af.Moderation, SupportPlus, af.Staff, af.Events, af.Giveaways, ClansPlus, af.Games, ShopAdmin, af.Security, MOG, AutoRole, Roles, LevelFix, ShopDelete, Verification)
     for cls in classes:
         await bot.add_cog(cls(bot))
+
+# ───────────────────────────── Заказ ивентов ─────────────────────────────
+_register_before_events = register
+
+
+async def register(bot):
+    await _register_before_events(bot)
+    from modules.event_orders import EventOrders
+    await bot.add_cog(EventOrders(bot))
