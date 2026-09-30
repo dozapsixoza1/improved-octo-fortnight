@@ -343,7 +343,7 @@ def create_math_card(
 
     draw.text(
         (180, 180),
-        '🧮  МАТЕМАТИКА',
+        'МАТЕМАТИКА',
         font=title_font,
         fill=(255, 255, 255),
     )
@@ -435,7 +435,7 @@ def create_math_card(
     hint_font = _get_font(35)
 
     hint = (
-        '⚡ Первый правильный ответ получает +1 балл'
+        'Первый правильный ответ получает +1 балл'
     )
 
     bbox = draw.textbbox(
@@ -564,7 +564,7 @@ def create_winner_card(
 
     title_font = _get_font(90, bold=True)
 
-    title = '⚡ ПРАВИЛЬНЫЙ ОТВЕТ!'
+    title = 'ПРАВИЛЬНЫЙ ОТВЕТ!'
 
     bbox = draw.textbbox(
         (0, 0),
@@ -697,7 +697,7 @@ def create_final_card():
 
     title_font = _get_font(100, bold=True)
 
-    title = '🏆 МАТЕМАТИКА'
+    title = 'МАТЕМАТИКА'
 
     bbox = draw.textbbox(
         (0, 0),
@@ -1345,18 +1345,20 @@ class EventOrders(commands.Cog):
                 f'`{row["score"]}`'
             )
 
+        leaders_text = (
+            '\n'.join(score_lines)
+            if score_lines
+            else 'Пока никто не отвечал.'
+        )
+
         e = emb(
             '🧮 МАТЕМАТИКА',
             'Решите **5 примеров** быстрее остальных.\n'
             'Первый правильный ответ получает '
             '**+1 балл**.\n\n'
             f'**Статус:** {status}\n'
-            f'**Раунд:** '
-            f'{session["round"]}/{MATH_ROUNDS}\n\n'
-            f'🏆 **Лидеры:**\n'
-            f'{chr(10).join(score_lines) '
-            'if score_lines else '
-            '"Пока никто не отвечал."}',
+            f'**Раунд:** {session["round"]}/{MATH_ROUNDS}\n\n'
+            f'🏆 **Лидеры:**\n{leaders_text}',
             color=0x8B5CF6,
         )
 
@@ -1494,22 +1496,47 @@ class EventOrders(commands.Cog):
             ),
         )
 
-        leaders_text = (
-    '\n'.join(score_lines)
-    if score_lines
-    else 'Пока никто не отвечал.'
-)
+        rows = await self._math_scores(
+            order_id
+        )
 
-e = emb(
-    '🧮 МАТЕМАТИКА',
-    'Решите **5 примеров** быстрее остальных.\n'
-    'Первый правильный ответ получает '
-    '**+1 балл**.\n\n'
-    f'**Статус:** {status}\n'
-    f'**Раунд:** {session["round"]}/{MATH_ROUNDS}\n\n'
-    f'🏆 **Лидеры:**\n{leaders_text}',
-    color=0x8B5CF6,
-)
+        score_lines = []
+
+        for idx, row in enumerate(
+            rows[:5],
+            1,
+        ):
+            member = self.bot.get_user(
+                row['user_id']
+            )
+
+            name = (
+                member.display_name
+                if member
+                else f'ID {row["user_id"]}'
+            )
+
+            score_lines.append(
+                f'**{idx}.** {name} — '
+                f'`{row["score"]}`'
+            )
+
+        leaders_text = (
+            '\n'.join(score_lines)
+            if score_lines
+            else 'Пока никто не отвечал.'
+        )
+
+        q = emb(
+            '🧮 МАТЕМАТИКА',
+            'Решите **5 примеров** быстрее остальных.\n'
+            'Первый правильный ответ получает '
+            '**+1 балл**.\n\n'
+            f'**Статус:** 🟢 Раунд {new_round} идёт\n'
+            f'**Раунд:** {new_round}/{MATH_ROUNDS}\n\n'
+            f'🏆 **Лидеры:**\n{leaders_text}',
+            color=0x8B5CF6,
+        )
 
         q.set_image(
             url=f'attachment://math_round_{new_round}.png'
@@ -1577,6 +1604,10 @@ e = emb(
             'SET active=0,finished=1 '
             'WHERE order_id=?',
             (order_id,),
+        )
+
+        session = await self._math_session(
+            order_id
         )
 
         channel = self.bot.get_channel(
@@ -1795,6 +1826,14 @@ e = emb(
             'WHERE order_id=?',
             (session['order_id'],),
         )
+
+        task = self.math_tasks.pop(
+            session['order_id'],
+            None,
+        )
+
+        if task and not task.done():
+            task.cancel()
 
         await self._math_new_round(
             session['order_id']
